@@ -21,6 +21,29 @@ ZONE_OUT_POLYGONS = [
     np.array([[1250, 860], [1250, 560], [1450, 560], [1450, 860]]),
 ]
 
+class DetectionsManager:
+    def __init__(self) -> None:
+        self.tracker_id_to_zone_id: Dict[int, int] = {}
+        
+    def update(
+        self,
+        detections_all: sv.Detections,
+        detections_in_zones: List[sv.Detections]
+    ) -> sv.Detections:    
+        
+        for zone_in_id, detections_in_zone in enumerate(detections_in_zones):
+            for tracker_id in detections_in_zone.tracker_id:
+                self.tracker_id_to_zone_id.setdefault(tracker_id, zone_in_id)
+            
+        if len(detections_all) > 0:
+            detections_all.class_id = np.vectorize(
+                lambda x: self.tracker_id_to_zone_id.get(x, -1)
+            )(detections_all.tracker_id)
+        else:
+            detections_all.class_id = np.array([], dtype=int)
+        return detections_all[detections_all.class_id != -1]
+        
+
 def initiate_polygon_zones(
     polygons: List[np.ndarray],
     triggering_anchors: Iterable[sv.Position] = [sv.Position.CENTER],
@@ -56,6 +79,7 @@ class VideoProcessor:
         self.label_annotator = sv.LabelAnnotator(
             color=COLORS, text_color=sv.Color.BLACK
         )
+        self.detections_manager = DetectionsManager()
         
         
     def process_video(self):
@@ -99,6 +123,18 @@ class VideoProcessor:
             )[0]
         detections = sv.Detections.from_ultralytics(result)
         detections = self.tracker.update_with_detections(detections)
+        
+        detections_in_zones = []
+        
+        for zone_in in self.zones_in:
+            detections_in_zone = detections[zone_in.trigger(detections=detections)]
+            detections_in_zones.append(detections_in_zone)
+        
+        detections = self.detections_manager.update(
+            detections, detections_in_zones
+        )
+        
+        
         return self.annotate_frame(frame=frame, detections=detections)
         
     
