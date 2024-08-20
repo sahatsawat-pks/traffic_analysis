@@ -79,6 +79,9 @@ class VideoProcessor:
         self.label_annotator = sv.LabelAnnotator(
             color=COLORS, text_color=sv.Color.BLACK
         )
+        self.trace_annotator = sv.TraceAnnotator(
+            color=COLORS, position=sv.Position.CENTER, trace_length=100, thickness=2
+        )
         self.detections_manager = DetectionsManager()
         
         
@@ -97,6 +100,7 @@ class VideoProcessor:
         ) -> np.ndarray:
         annotated_frame = frame.copy()
         labels = [f"#{tracker_id}" for tracker_id in detections.tracker_id]
+        annotated_frame = self.trace_annotator.annotate(annotated_frame, detections)
         annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
         annotated_frame = self.label_annotator.annotate(
             annotated_frame, detections, labels
