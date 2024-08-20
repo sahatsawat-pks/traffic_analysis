@@ -20,7 +20,11 @@ class VideoProcessor:
         self.iou_threshold = iou_threshold
         
         self.model = YOLO(source_weights_path)
+        self.tracker = sv.ByteTrack()
         self.box_annotator = sv.BoxAnnotator(color=COLORS)
+        self.label_annotator = sv.LabelAnnotator(
+            color=COLORS, text_color=sv.Color.BLACK
+        )
         
         
     def process_video(self):
@@ -37,8 +41,10 @@ class VideoProcessor:
         self, frame: np.ndarray, detections: sv.Detections
         ) -> np.ndarray:
         annotated_frame = frame.copy()
-        annotated_frame = self.box_annotator.annotate(
-            scene=annotated_frame, detections=detections
+        labels = [f"#{tracker_id}" for tracker_id in detections.tracker_id]
+        annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
+        annotated_frame = self.label_annotator.annotate(
+            annotated_frame, detections, labels
         )
         return annotated_frame
     
@@ -47,6 +53,7 @@ class VideoProcessor:
             frame, verbose=False, conf=self.confidence_threshold, iou=self.iou_threshold
             )[0]
         detections = sv.Detections.from_ultralytics(result)
+        detections = self.tracker.update_with_detections(detections)
         return self.annotate_frame(frame=frame, detections=detections)
         
     
