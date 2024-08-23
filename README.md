@@ -75,3 +75,10 @@ https://github.com/roboflow/supervision/assets/26109316/c9436828-9fbf-4c25-ae8c-
   --iou_threshold 0.5 \
   --target_video_path data/traffic_analysis_result.mov
 ```
+
+Roboflow. Supervision [Computer software]. https://github.com/roboflow/supervision
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
