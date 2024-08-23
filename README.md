@@ -6,7 +6,8 @@ It provides detailed annotations and zone-based tracking, making it ideal for tr
 
 
 
-![](data/traffic_analysis_github_version.mov)
+![traffic_analysis_result](https://github.com/user-attachments/assets/e74cff03-d57d-4b0c-9b59-c9032e5bcd17)
+
 
 
 
