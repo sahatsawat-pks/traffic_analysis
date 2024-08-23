@@ -69,7 +69,4 @@ https://github.com/user-attachments/assets/9bc2ed2e-a8c3-4cb0-9730-85bb07e71fbe
   --confidence_threshold 0.3 \
   --iou_threshold 0.5 \
   --target_video_path data/traffic_analysis_result.mov
-
-    
-
-  
+```
