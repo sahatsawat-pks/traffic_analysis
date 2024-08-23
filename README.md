@@ -6,7 +6,7 @@ It provides detailed annotations and zone-based tracking, making it ideal for tr
 
 
 
-![traffic_analysis_result](https://github.com/user-attachments/assets/e74cff03-d57d-4b0c-9b59-c9032e5bcd17)
+https://github.com/roboflow/supervision/assets/26109316/c9436828-9fbf-4c25-ae8c-60e9c81b3900
 
 
 
