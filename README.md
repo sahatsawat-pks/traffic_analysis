@@ -4,7 +4,11 @@ This project implements a traffic flow analysis system using YOLO for object det
 The system is designed to process video footage, detect vehicles, and track their movements across predefined zones within the video.
 It provides detailed annotations and zone-based tracking, making it ideal for traffic monitoring and analysis.
 
-https://github.com/user-attachments/assets/9bc2ed2e-a8c3-4cb0-9730-85bb07e71fbe
+
+
+![](data/traffic_analysis_github_version.mov)
+
+
 
 ## Features
 - **Object Detection**: Utilizes YOLO for detecting vehicles in the video.
