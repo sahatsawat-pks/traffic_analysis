@@ -1,0 +1,4 @@
+gdown
+supervision>=0.20.0
+tqdm
+ultralytics
