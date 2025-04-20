@@ -8,6 +8,9 @@ from typing import Dict, Iterable, List, Set
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 import gc
+import os
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 COLORS = sv.ColorPalette.from_hex(["#E6194B", "#3CB44B", "#FFE119", "#3C76D1"])
 
@@ -309,12 +312,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = Application(master=root)
     app.mainloop()
-
-# Instructions for processing a video:
-# 1. Run the application.
-# 2. Browse for the source weights file.
-# 3. Browse for the source video file.
-# 4. Browse for the target video file (optional).
-# 5. Set the confidence threshold and IOU threshold.
-# 6. Click the "Start Processing" button.
-# 7. The processed video will be written to the target video file (if provided) or displayed in a window.
