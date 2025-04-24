@@ -8,6 +8,78 @@ import numpy as np
 from main import VideoProcessor
 from main_optimize import VideoProcessor_Optimize
 
+def plot_comparison(original_results, optimized_results, orig_trials=None, opt_trials=None):
+    # Bar plots (existing)
+    fig, axs = plt.subplots(3, 2, figsize=(14, 15))
+
+    # Bar plot: Execution Time
+    axs[0, 0].bar(['Original', 'Optimized'], 
+                 [original_results['execution_time'], optimized_results['execution_time']], color=['skyblue', 'lightgreen'])
+    axs[0, 0].set_title('Average Execution Time (s)')
+    axs[0, 0].set_ylabel('Seconds')
+    
+    # Bar plot: Peak Memory Usage
+    axs[0, 1].bar(['Original', 'Optimized'], 
+                 [original_results['peak_memory'], optimized_results['peak_memory']], color=['skyblue', 'lightgreen'])
+    axs[0, 1].set_title('Average Peak Memory Usage (MB)')
+    axs[0, 1].set_ylabel('MB')
+    
+    # Bar plot: CPU Time
+    axs[1, 0].bar(['Original User', 'Optimized User', 'Original System', 'Optimized System'], 
+                 [original_results['user_cpu_time'], optimized_results['user_cpu_time'],
+                  original_results['system_cpu_time'], optimized_results['system_cpu_time']],
+                 color=['skyblue', 'lightgreen', 'deepskyblue', 'lightseagreen'])
+    axs[1, 0].set_title('Average CPU Usage (s)')
+    axs[1, 0].set_ylabel('Seconds')
+    
+    # Bar plot: Memory Increase
+    axs[1, 1].bar(['Original', 'Optimized'], 
+                 [original_results['memory_increase'], optimized_results['memory_increase']], color=['skyblue', 'lightgreen'])
+    axs[1, 1].set_title('Average Memory Usage Increase (MB)')
+    axs[1, 1].set_ylabel('MB')
+    
+    # Line plot: Execution Time per Trial
+    if orig_trials and opt_trials:
+        axs[2, 0].plot(orig_trials['execution_time'], label='Original', marker='o')
+        axs[2, 0].plot(opt_trials['execution_time'], label='Optimized', marker='s')
+        axs[2, 0].set_title('Execution Time per Trial')
+        axs[2, 0].set_ylabel('Seconds')
+        axs[2, 0].set_xlabel('Trial')
+        axs[2, 0].legend()
+    
+        # Boxplot: Memory Increase Spread
+        axs[2, 1].boxplot([orig_trials['memory_increase'], opt_trials['memory_increase']], labels=['Original', 'Optimized'])
+        axs[2, 1].set_title('Memory Increase Spread per Trial')
+        axs[2, 1].set_ylabel('MB')
+    
+    plt.tight_layout()
+    plt.savefig('performance_comparison_extended.png')
+    plt.show()
+
+    # Radar chart (optional, separate figure)
+    labels = ['Execution Time', 'Peak Memory', 'Memory Increase', 'User CPU', 'System CPU']
+    orig_values = [original_results[k] for k in ['execution_time', 'peak_memory', 'memory_increase', 'user_cpu_time', 'system_cpu_time']]
+    opt_values = [optimized_results[k] for k in ['execution_time', 'peak_memory', 'memory_increase', 'user_cpu_time', 'system_cpu_time']]
+
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+    orig_values += orig_values[:1]
+    opt_values += opt_values[:1]
+    angles += angles[:1]
+
+    fig = plt.figure(figsize=(6, 6))
+    ax = fig.add_subplot(111, polar=True)
+    ax.plot(angles, orig_values, 'o-', label='Original')
+    ax.plot(angles, opt_values, 'o-', label='Optimized')
+    ax.fill(angles, orig_values, alpha=0.25)
+    ax.fill(angles, opt_values, alpha=0.25)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels)
+    ax.set_title('Radar Chart: Performance Metrics')
+    ax.legend(loc='upper right')
+    plt.savefig('performance_radar_chart.png')
+    plt.show()
+
+
 def measure_performance(processor_class, source_weights_path, source_video_path, target_video_path, 
                         name="Original", trials=1):
     results = {
@@ -74,40 +146,6 @@ def measure_performance(processor_class, source_weights_path, source_video_path,
     
     return avg_results, std_results
 
-def plot_comparison(original_results, optimized_results):
-    # Create a figure with subplots
-    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
-    
-    # Plot execution time
-    axs[0, 0].bar(['Original', 'Optimized'], 
-                 [original_results['execution_time'], optimized_results['execution_time']])
-    axs[0, 0].set_title('Execution Time (s)')
-    axs[0, 0].set_ylabel('Seconds')
-    
-    # Plot memory usage
-    axs[0, 1].bar(['Original', 'Optimized'], 
-                 [original_results['peak_memory'], optimized_results['peak_memory']])
-    axs[0, 1].set_title('Peak Memory Usage (MB)')
-    axs[0, 1].set_ylabel('MB')
-    
-    # Plot CPU time
-    axs[1, 0].bar(['Original User', 'Optimized User', 'Original System', 'Optimized System'], 
-                 [original_results['user_cpu_time'], optimized_results['user_cpu_time'],
-                  original_results['system_cpu_time'], optimized_results['system_cpu_time']])
-    axs[1, 0].set_title('CPU Usage (s)')
-    axs[1, 0].set_ylabel('Seconds')
-    
-    # Plot memory increase
-    axs[1, 1].bar(['Original', 'Optimized'], 
-                 [original_results['memory_increase'], optimized_results['memory_increase']])
-    axs[1, 1].set_title('Memory Usage Increase (MB)')
-    axs[1, 1].set_ylabel('MB')
-    
-    # Adjust layout and save
-    plt.tight_layout()
-    plt.savefig('performance_comparison.png')
-    plt.show()
-
 if __name__ == "__main__":
     # Use the same files for both versions to ensure fair comparison
     YOLO_WEIGHTS = "data/traffic_analysis.pt"
@@ -116,7 +154,7 @@ if __name__ == "__main__":
     OUTPUT_OPT = "data/traffic_analysis_optimized.mov"
     
     # Number of trials for each version
-    TRIALS = 3
+    TRIALS = 10
     
     print("Running original version...")
     orig_avg, orig_std = measure_performance(
@@ -141,6 +179,6 @@ if __name__ == "__main__":
     print("\n=== Improvement Summary ===")
     print(f"Execution Time Reduction  : {time_improvement:.2f}%")
     print(f"Peak Memory Reduction     : {memory_improvement:.2f}%")
-    
+
     # Create visual comparison
     plot_comparison(orig_avg, opt_avg)

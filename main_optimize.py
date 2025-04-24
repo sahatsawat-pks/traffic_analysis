@@ -15,6 +15,7 @@ import threading
 import queue
 from concurrent.futures import ThreadPoolExecutor
 import logging
+import mmap
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -38,6 +39,268 @@ ZONE_OUT_POLYGONS = [
     np.array([[1250, 860], [1250, 560], [1450, 560], [1450, 860]]),
 ]
 
+class MmapFrameReader:
+    """
+    Memory-mapped file reader for optimized video frame access.
+    Uses mmap for efficient file I/O operations with minimal memory overhead.
+    """
+    def __init__(self, file_path: str, frame_size: int, header_size: int = 0):
+        self.file_path = file_path
+        self.frame_size = frame_size
+        self.header_size = header_size
+        
+        # Open file and create memory map
+        self.file_obj = open(file_path, 'rb')
+        self.file_size = os.path.getsize(file_path)
+        self.mmap_obj = mmap.mmap(
+            self.file_obj.fileno(),
+            length=0,  # Map the entire file
+            access=mmap.ACCESS_READ  # Read-only access
+        )
+        
+        # Calculate number of frames
+        self.data_size = self.file_size - self.header_size
+        self.num_frames = self.data_size // self.frame_size
+        
+        # Current position tracker
+        self.current_frame = 0
+    
+    def seek_frame(self, frame_idx: int) -> bool:
+        """Seek to a specific frame."""
+        if 0 <= frame_idx < self.num_frames:
+            self.current_frame = frame_idx
+            return True
+        return False
+    
+    def read_frame_data(self, frame_idx: Optional[int] = None) -> bytes:
+        """Read raw data for a specific frame."""
+        idx = self.current_frame if frame_idx is None else frame_idx
+        
+        if 0 <= idx < self.num_frames:
+            offset = self.header_size + (idx * self.frame_size)
+            return self.mmap_obj[offset:offset + self.frame_size]
+        
+        return None
+    
+    def read_next_frame(self) -> bytes:
+        """Read the next frame and advance position."""
+        if self.current_frame < self.num_frames:
+            data = self.read_frame_data(self.current_frame)
+            self.current_frame += 1
+            return data
+        return None
+    
+    def close(self):
+        """Close the memory map and file."""
+        if hasattr(self, 'mmap_obj') and self.mmap_obj is not None:
+            self.mmap_obj.close()
+            self.mmap_obj = None
+        
+        if hasattr(self, 'file_obj') and self.file_obj is not None:
+            self.file_obj.close()
+            self.file_obj = None
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+class MmapVideoReader:
+    """
+    Memory-mapped video reader that combines mmap file access with OpenCV
+    for optimized video frame access with lower memory usage.
+    """
+    def __init__(self, video_path: str, buffer_size: int = 16):
+        import cv2
+        import numpy as np
+        
+        self.video_path = video_path
+        self.buffer_size = buffer_size
+        
+        # Open video with OpenCV to get properties
+        cap = cv2.VideoCapture(video_path)
+        self.width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.fps = cap.get(cv2.CAP_PROP_FPS)
+        self.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+        
+        # Get video codec information
+        fourcc_chars = [chr((self.fourcc >> 8 * i) & 0xFF) for i in range(4)]
+        self.codec = ''.join(fourcc_chars)
+        
+        # Create frame buffer
+        self.frame_buffer = {}
+        self.current_frame = 0
+        
+        # Close OpenCV capture since we'll use mmap
+        cap.release()
+        
+        # Initialize video parser based on codec
+        self._setup_decoder()
+    
+    def _setup_decoder(self):
+        """Set up the appropriate decoder based on video codec."""
+        import cv2
+        
+        # For uncompressed formats (like raw YUV), we could use mmap directly
+        # For compressed formats (like MP4), we need to use OpenCV for decoding
+        
+        # Check if format is suitable for direct mmap
+        if self.codec in ['RAW ', 'YUV ']:
+            # Setup direct mmap access if possible
+            # This is an example and would need customization based on format
+            frame_size = self.width * self.height * 3  # Assuming 3 channels (RGB)
+            try:
+                self.mmap_reader = MmapFrameReader(self.video_path, frame_size)
+                self.use_direct_mmap = True
+                return
+            except Exception as e:
+                logging.warning(f"Failed to set up direct mmap access: {e}")
+        
+        # Fallback to OpenCV with strategic buffering
+        self.use_direct_mmap = False
+        self.cap = cv2.VideoCapture(self.video_path)
+        
+        # Pre-allocate memory for frame buffer
+        self.frame_buffer = {}
+    
+    def _buffer_frames(self, start_idx: int, count: int = None):
+        """Buffer a range of frames."""
+        if not count:
+            count = self.buffer_size
+        
+        end_idx = min(start_idx + count, self.total_frames)
+        
+        # Skip if using direct mmap
+        if self.use_direct_mmap:
+            return
+            
+        # Clear old buffer
+        current_buffer_keys = list(self.frame_buffer.keys())
+        for key in current_buffer_keys:
+            if key < start_idx or key >= end_idx:
+                del self.frame_buffer[key]
+        
+        # Fill buffer with new frames
+        if self.cap is not None:
+            for idx in range(start_idx, end_idx):
+                if idx not in self.frame_buffer:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+                    success, frame = self.cap.read()
+                    if success:
+                        self.frame_buffer[idx] = frame
+    
+    def read_frame(self, frame_idx: int = None):
+        """Read a specific frame or the next frame."""
+        import cv2
+        import numpy as np
+        
+        if frame_idx is None:
+            frame_idx = self.current_frame
+            self.current_frame += 1
+        
+        if frame_idx >= self.total_frames:
+            return False, None
+        
+        # Direct mmap access for uncompressed formats
+        if self.use_direct_mmap:
+            try:
+                raw_data = self.mmap_reader.read_frame_data(frame_idx)
+                if raw_data:
+                    # Convert raw bytes to numpy array
+                    # This needs customization based on pixel format
+                    frame = np.frombuffer(raw_data, dtype=np.uint8)
+                    frame = frame.reshape((self.height, self.width, 3))
+                    return True, frame
+            except Exception as e:
+                logging.error(f"Error reading frame with mmap: {e}")
+                return False, None
+        
+        # Optimized OpenCV access with buffering
+        # Check if frame is in buffer, otherwise load from disk
+        if frame_idx not in self.frame_buffer:
+            buffer_start = (frame_idx // self.buffer_size) * self.buffer_size
+            self._buffer_frames(buffer_start)
+        
+        # Return frame from buffer if available
+        if frame_idx in self.frame_buffer:
+            return True, self.frame_buffer[frame_idx]
+        
+        # Fallback to direct access
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        return self.cap.read()
+    
+    def close(self):
+        """Close all resources."""
+        if hasattr(self, 'mmap_reader') and self.mmap_reader is not None:
+            self.mmap_reader.close()
+        
+        if hasattr(self, 'cap') and self.cap is not None:
+            self.cap.release()
+        
+        # Clear buffer
+        self.frame_buffer.clear()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+def modify_frame_reader_to_use_mmap(processor):
+    """
+    Modifies the frame_reader function of VideoProcessor_Optimize to use memory-mapped file access.
+    This function should be called before starting video processing.
+    """
+    def frame_reader_with_mmap(self):
+        """Thread function for reading frames from video with mmap optimization."""
+        try:
+            # Initialize mmap video reader
+            mmap_reader = MmapVideoReader(self.source_video_path, buffer_size=32)
+            frame_idx = 0
+            
+            while not self.stop_event.is_set():
+                # Read frame
+                success, frame = mmap_reader.read_frame()
+                if not success:
+                    break
+                
+                # Update frame counter
+                with self.stats_lock:
+                    self.frame_count += 1
+                
+                # Skip frames if needed
+                if self.skip_frames > 0 and frame_idx % (self.skip_frames + 1) != 0:
+                    frame_idx += 1
+                    continue
+                
+                # Put frame in queue
+                try:
+                    self.frame_queue.put((frame_idx, frame), timeout=1.0)
+                    frame_idx += 1
+                except queue.Full:
+                    if self.stop_event.is_set():
+                        break
+                    time.sleep(0.01)  # Small sleep to prevent CPU hogging
+            
+            # Signal end of frames
+            self.frame_queue.put((None, None))
+            
+            # Clean up
+            mmap_reader.close()
+            
+        except Exception as e:
+            logger.error(f"Error in mmap frame reader: {e}")
+            self.stop_event.set()
+    
+    # Replace the original frame_reader method with our mmap version
+    processor.frame_reader = frame_reader_with_mmap.__get__(processor, type(processor))
+    
+    return processor
 
 class DetectionsManager:
     """
@@ -243,7 +506,7 @@ class FrameProcessor:
                     )
 
                     # Clear CUDA cache if needed
-                    if self.frame_count % 10 == 0 and torch.cuda.is_available():
+                    if torch.cuda.is_available():
                         torch.cuda.empty_cache()
         
         return detections
@@ -498,7 +761,7 @@ class VideoProcessor_Optimize:
             # Signal end of processing
             self.result_queue.put((None, None, None))
 
-    def annotate_frames(self):
+    def annotate_frames_thread(self):
         """Thread function for annotating frames."""
         try:
             while not self.stop_event.is_set():
@@ -625,7 +888,7 @@ class VideoProcessor_Optimize:
             self.threads.append(processor_thread)
         
         # Start annotator thread
-        annotator_thread = threading.Thread(target=self.annotate_frames)
+        annotator_thread = threading.Thread(target=self.annotate_frames_thread)
         annotator_thread.daemon = True
         annotator_thread.start()
         self.threads.append(annotator_thread)
@@ -828,6 +1091,9 @@ class Application(tk.Frame):
         tk.Label(threading_frame, text="Queue Size:").pack(side=tk.LEFT, padx=5)
         tk.Spinbox(threading_frame, from_=8, to=64, textvariable=self.queue_size, width=5).pack(side=tk.LEFT, padx=5)
         
+        self.use_mmap = BooleanVar(value=True)  
+        tk.Checkbutton(options_frame, text="Use Memory Mapping", variable=self.use_mmap).pack(side=tk.LEFT, padx=5)
+        
         # Info section
         info_text = "This tool processes video using YOLO object detection with tracking.\n" + \
                    "Higher confidence threshold = fewer detections but more accurate.\n" + \
@@ -968,6 +1234,8 @@ class Application(tk.Frame):
                 num_threads=self.num_threads.get(),
                 queue_size=self.queue_size.get(),
             )
+
+            modify_frame_reader_to_use_mmap(self.current_process)
             
             # Start monitoring thread for updating progress
             self.monitor_thread = threading.Thread(target=self._monitor_progress)
