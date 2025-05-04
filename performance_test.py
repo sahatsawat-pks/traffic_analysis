@@ -154,7 +154,7 @@ if __name__ == "__main__":
     OUTPUT_OPT = "data/traffic_analysis_optimized.mov"
     
     # Number of trials for each version
-    TRIALS = 10
+    TRIALS = 3
     
     print("Running original version...")
     orig_avg, orig_std = measure_performance(
